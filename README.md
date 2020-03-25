@@ -16,3 +16,8 @@ For now, the code just gets top 5 similar movies that are similar to a particula
 python manage.py runserver
 
 Django runs at : localhost:8000
+go to /sign_in.html to start
+press sign up below 
+create account
+sign in 
+press any movie will direct you to new page with trailer
