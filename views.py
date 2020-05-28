@@ -1,3 +1,11 @@
+#is this the latest one(show from github)
+#difference between users table and users1.db
+#what is i=12
+#can we do unit testing for the (new one) functions
+#about creating objects for test functions (do we hardcode it)
+#what are the columns of the table/database
+#test_views.py line 19 u,p,e or full forms?
+
 from django.shortcuts import render
 from django.http import HttpResponse
 import pandas as pd
@@ -7,27 +15,122 @@ from sklearn.metrics.pairwise import cosine_similarity
 import sqlite3 
 from django.http import JsonResponse
 import requests
+from django.views.decorators.csrf import csrf_exempt
 
-i=0
+import unittest
+import calc
+#from unittest.mock import patchsq
+
+i=12  #number of movies initially fetched before scrolling down
+csv_path = r"C:\Users\SreedharK\Desktop\sixth semester\UE17CS355 - web tech-II lab\FINAL WT-2 PROJECT\proj1\movie_dataset.csv"  #change this path
+
 # Create your views here.
 def welcome(request):
-	return render(request, 'getmovies.html')
+	return render(request, 'sign_in.html')
+def newsFeed(request):
+	return render(request, 'rss_news.html')
+def home(request):
+	return render(request,'getmovies.html')
+def usg(request):
+	return render(request, 'sign_up.html')
+def dyou(request):
+	return render(request,'display_vedio.html')
+def items(request):
+	return render(request,'item.html')
+def out(request):
+	return render(request,'y.html')
+def search_results(request):
+	return render(request,'search_results.html')
+ 
+@csrf_exempt 
+def user_store(request):
+	if request.method == "POST":
+		conn = sqlite3.connect('users1.db')
+		cursor = conn.cursor()
+		username = request.POST['username']
+		password= request.POST['password']
+		email = request.POST['email']
+		cursor.execute("CREATE TABLE IF NOT EXISTS users(username text PRIMARY KEY,password text,email text);")
 
-def addMovie(request):
+		conn.commit()
+		try:
+			cursor.execute("INSERT INTO users VALUES(?,?,?);",(username,password,email))
+			conn.commit()
+		except:
+			return HttpResponse("fail")
+
+		return HttpResponse("succ")
+		
+	return "out"
+
+	
+@csrf_exempt 
+def vusers(request):			#if username and password combination is correct 
+	conn = sqlite3.connect('users1.db')
+	cursor = conn.cursor()
+	username = request.POST['username']
+	password= request.POST['password']
+	cursor.execute("SELECT password FROM users WHERE username=?",(username,))
+	rows = cursor.fetchall()
+	if(rows == []):
+		return HttpResponse("no_user")
+	valid_password = rows[0][0]
+	if(valid_password == password):
+		return 	HttpResponse("succ")
+	else:
+		return HttpResponse("fail")
+
+@csrf_exempt
+def vusername(request):			#if username is valid
+	conn = sqlite3.connect('users1.db')
+	cursor = conn.cursor()
+	username = request.POST['username']
+	cursor.execute("SELECT count(*) FROM users WHERE username=?",(username,))
+	rows = [item[0] for item in cursor.fetchall()]
+	
+	if(rows[0] == 0):
+		return 	HttpResponse("pass")
+	else:
+		return 	HttpResponse("fail")
+
+
+
+def dis_img(request):
+	f = open("mov1.jpg","rb")
+	p=f.read()
+	return HttpResponse(p, content_type='img/jpg')
+
+
+def addMovie(request):			#adds movie to database
 	if request.method == "GET":
-		conn = sqlite3.connect('movies.db')
+		conn = sqlite3.connect('movie.db')
 		cursor = conn.cursor()
 
 		movie_name = request.GET['movie_name']
+		username = request.GET['username']
+		print(movie_name)
 		cursor.execute("CREATE TABLE IF NOT EXISTS user_history(\
 		movie_name text,\
 		username text\
 		);")
 		conn.commit()
 
-		cursor.execute("INSERT INTO user_history VALUES('user1',?);",(movie_name,))
+		cursor.execute("INSERT INTO user_history VALUES(?,?);",(movie_name,username,))
+		print("success")
 		conn.commit()
 		return HttpResponse("")
+
+def get_suggestions(request):
+	prefix = request.GET['moviePart']
+	prefix = prefix.capitalize()
+	result = []
+	df = pd.read_csv(csv_path)
+	title_list = list(df["title"])
+	for title in title_list:
+		if(title.startswith(prefix)):
+				result.append(title)
+	
+	return JsonResponse(result,safe=False)
 
 def recommend(request):
 	return render(request, 'recommend.html')
@@ -37,11 +140,59 @@ def rssFeed(request):
 	return render(request, 'rss.html')
 
 # Create your views here.
-def getRecommendations(request):  #content-based filtering
-	print("g");
+def jaccard_similarity(list1, list2):
+    intersection = len(list(set(list1).intersection(list2)))
+    union = (len(list1) + len(list2)) - intersection
+    return float(intersection) / union
+
+def collabfilter(request):   #sudhamshu
+	username = request.GET['username']
+	conn = sqlite3.connect('users1.db')
+	cursor = conn.cursor()
+	cursor.execute("SELECT username FROM users")
+	rows = cursor.fetchall()
+	
+	list_users = []
+	for row in rows:
+		list_users.append(row[0])
+	
+	conn = sqlite3.connect('movie.db')
+	cursor = conn.cursor()
+	p=dict()
+	for i in range(0,len(list_users)):
+		cursor.execute("select movie_name from user_history where username=?",(list_users[i],))
+		rows = cursor.fetchall()
+		list_movies = []
+		for row in rows:
+			list_movies.append(row[0])
+		p[list_users[i]]=list_movies 
+	movie_list=[]
+	j=dict()	
+	u=p[username]
+	if(len(p[username])==0):
+		return JsonResponse(movie_list,safe=False)
+
+	for i in p:
+		if(i!=username):
+			j[i]=jaccard_similarity(p[username],p[i])
+			print(i,j[i])
+	Keymax = max(j, key=j.get)
+	
+	
+	if(j[Keymax]==0):
+		return JsonResponse(movie_list,safe=False)
+	else:
+		res = list(set(p[Keymax])-set(p[username]))
+	print(p[Keymax],p[username])
+	return JsonResponse(res,safe=False)
+	
+
+def getRecommendations(request):  #sudhamshu
+	
 	#return render(request, 'home.html')
 	#return render(request, 'home.html', {'name':'vinu'})
-	df = pd.read_csv(r"C:\Users\SreedharK\Desktop\sixth semester\UE17CS355 - web tech-II lab\WebTech2-master\movie_dataset.csv")
+	username = request.GET['username']
+	df = pd.read_csv(csv_path)
 	features = ['keywords','cast','genres','director']
 	
 	def combine_features(row):
@@ -52,98 +203,73 @@ def getRecommendations(request):  #content-based filtering
 	df["combined_features"] = df.apply(combine_features,axis=1)
 	cv = CountVectorizer()
 	count_matrix = cv.fit_transform(df["combined_features"])
-	cosine_sim = cosine_similarity(count_matrix)  #minimum angle in a vector(2-d plane) - 0 to 1(1 is very similar)
+	cosine_sim = cosine_similarity(count_matrix)
 	def get_title_from_index(index):
 	    return df[df.index == index]["title"].values[0]
 	def get_index_from_title(title):
-	    return df[df.title == title]["index"].values[0]
+		return df[df.title == title]["index"].values[0]
 	
-	conn = sqlite3.connect('movies.db')
+	
+	conn = sqlite3.connect('movie.db')
 	cursor = conn.cursor()
 	
-	cursor.execute("select * from user_history")
+	cursor.execute("select movie_name from user_history where username=?",(username,))
 	rows = cursor.fetchall()
 	
 	list_movies = []
 	for row in rows:
-		list_movies.append(row[1])
+		if(row[0] in list(df["title"])): 	
+			list_movies.append(row[0])
 	
 	movie_details = dict()
+	print(list_movies)
 	
 	for movie_user_likes in list_movies:
 		movies = []
 		movie_index = get_index_from_title(movie_user_likes)
+		
 		similar_movies =  list(enumerate(cosine_sim[movie_index]))
-		sorted_similar_movies = sorted(similar_movies,key=lambda x:x[1],reverse=True)[1:] #highest to lowest similarity
+		sorted_similar_movies = sorted(similar_movies,key=lambda x:x[1],reverse=True)[1:]
 		i=0
 		for element in sorted_similar_movies:
 			movies.append(get_title_from_index(element[0]))
 			i=i+1
 			if i>=4:
-				break  #take first four
+				break
 		movie_details[movie_user_likes] = movies
-	print(movie_details)
+	for key in movie_details:
+		movie_details[key]=list(set(movie_details[key])-set(list_movies))
 	return JsonResponse(movie_details)
 
-def top_chart(dataset, col, var, votes='vote_count',vote_average='vote_average',percentile=0.85):  #to be used by popularity-based filtering
-    
-    '''
-    This function takes a dataset, column, subset and voting statistics to return a top chart.
-    1. Filters the original dataset
-    2. Determines the threshold for qualification based on percentile
-    3. Returns the top 10 results, sorted by vote_count
-    '''
-    
-    df = dataset[dataset[col] == var]
-    vote_counts = df[df[votes].notnull()][votes].astype('int')
-    vote_averages = df[df[vote_average].notnull()][vote_average].astype('int')
-    C = vote_averages.mean()
-    m = vote_counts.quantile(percentile)
-    
-    qualified = df[(df[votes] >= m) & (df[votes].notnull()) & (df[vote_average].notnull())][['title', votes, vote_average]]
-    qualified[votes] = qualified[votes].astype('int')
-    qualified[vote_average] = qualified[vote_average].astype('int')
-    
-    qualified = qualified.sort_values('vote_count', ascending=False).head(250)
-    
-    return qualified.head(10)
-
-def getPopMovies(request):
-	df = pd.read_csv(r"C:\Users\SreedharK\Desktop\sixth semester\UE17CS355 - web tech-II lab\WebTech2-master\movie_dataset.csv")
-	list_movies=[]
-	movie_votes = dict()
-	for dff in df:   
-		list_movies.append(dff[20])
-	sorted_popular_movies = list_movies.sort(reverse=True)
-	movie_detailss[sorted_popular_movies] = dff  #have a doubt here (we have to get the entire row corresponding to the sorted votes)  
-	print(movie_detailss)
-	print(JsonResponse(movie_detailss))
-
-	#creating separate tables based on popularity of genres
-	s = df.apply(lambda x: pd.Series(x['genres']),axis=1).stack().reset_index(level=1, drop=True)
-	s.name = 'genre'
-	gen_movies = df.drop('genres', axis=1).join(s)
-
-	print(top_chart(gen_movies, 'genre', 'Comedy', votes='vote_count',vote_average='vote_average'))
-	print(top_chart(gen_movies, 'genre', 'Animation', votes='vote_count',vote_average='vote_average'))
-	print(top_chart(gen_movies, 'genre', 'Romance'))  #the additional common parameters are not necessary
-	print(top_chart(gen_movies, 'genre', 'Adventure'))
-
-
-def getMovies(request):
+def getMovies():      #gets the movies from the csv file
 	movie_details=dict()	
-	df = pd.read_csv(r"C:\Users\SreedharK\Desktop\sixth semester\UE17CS355 - web tech-II lab\WebTech2-master\movie_dataset.csv")
-	df = df[:10]  #fetching the movie details of the first 25 movies (sending the titles of the movies)(first few movies)
-	title = df["title"]
+	df = pd.read_csv(csv_path)
+	df = df[0:12]
+	title = df["title"]   # takes the title column of the dataframe
 	movies = []
 	for i in title:
 		movies.append(i)
 	movie_details["movies"] = movies
-	return JsonResponse(movie_details)
+
+	return JsonResponse(movie_details)   #jrmd
 	#return HttpResponse(s)
 
-def user_history(request):
-	conn = sqlite3.connect('movies.db')
+def pred_fetch():   #(new one)
+	movie_details=dict()	
+	df = pd.read_csv(csv_path)
+	global i
+	df = df[i:i+4]
+	i=i+4
+	title = df["title"]
+	movies = []
+	for j in title:
+		movies.append(j)
+	movie_details["movies"] = movies
+	print(movies)
+	return JsonResponse(movie_details)
+	
+def user_history():
+	conn = sqlite3.connect('movie.db')
 	cursor = conn.cursor()
 	#cursor.execute("delete from user_history")
 	#conn.commit()
@@ -159,20 +285,8 @@ def user_history(request):
 	user_history["movies"] = list_movies
 	return JsonResponse(user_history)
 
-def pred_fetch(request):
-	return render(request,'prefetch.html')
 
-def fetch(request):
-	movie_details=dict()	
-	df = pd.read_csv(r"C:\Users\SreedharK\Desktop\sixth semester\UE17CS355 - web tech-II lab\WebTech2-master\movie_dataset.csv")
-	title = df["title"]
-	global i
-	print(title[i])  #list of movies
-	movie_details["movies"] = title[i]  
-	i=i+1
-	return JsonResponse(movie_details)
-	
-def getRSSFeed(request):
+def getRSSFeed():
 	data = requests.get("https://www.cinemablend.com/rss/topic/reviews/movies")
 	#fp = open(r"C:\Users\VINU PC\Desktop\feeds.xml", "r")
 	#data = fp.read()
@@ -181,6 +295,10 @@ def getRSSFeed(request):
     #return HttpResponse(open('myxmlfile.xml').read(), content_type='text/xml')
 
 
+def getNewsFeed():   #(new one)
+	data = requests.get("https://www.filmibeat.com/rss/filmibeat-hollywood-fb.xml")
+	return HttpResponse(data.text, content_type='text/xml')
+    
 
 
 ########## get recomm ##########
@@ -240,3 +358,150 @@ def getRSSFeed(request):
 		director = row[4]
 		movie_details[movie_name] = director 
 """
+
+def test_jaccard_similarity(list1,list2):
+    	ans = jaccard_similarity(list1,list2)
+        intersection = len(list(set(list1).intersection(list2)))
+        union = (len(list1) + len(list2)) - intersection
+        pred = float(intersection) / union
+        if(ans==pred):
+                print("success")
+        else:
+                print("fail")
+test_jaccard_similarity([1,2,3],[4,5,6])
+
+def test_user_store(username,password,email):   
+	PARAMS = {'username':username,'password':password,'email':email}
+	URL = "http://www.google.com"
+  	r = requests.get(url = URL, params = PARAMS)
+	user_store(r)#create a request object-username,pwd,email
+	r = sqlite3.execute("select * from users")
+	if(r[-1]==username):
+		print("success")
+	else:
+		print("fail")
+test_user_store("username","password","email")
+
+def test_vusers(username,password,email):   
+	#user_store()        #create a request object-username,pwd,email
+	PARAMS = {'username':username,'password':password,'email':email} 
+  	URL = "http://www.google.com"
+  	r = requests.get(url = URL, params = PARAMS) 
+  	k = requests.get(url = URL, params = PARAMS) 
+
+	vusers(r) 
+	r = sqlite3.execute("select username from users")
+
+	vusers(k)
+	k = sqlite3.execute("select password from users")
+	if(r[-1]==username and k[-1]==password):  #-1 indicates last entry/row
+		print("success")
+	else:
+		print("fail")
+test_vusers("username","password","email")
+
+
+def test_vusername(username,password,email):   
+# sending get request and saving the response as response object 
+	PARAMS = {'username':username,'password':password,'email':email} 
+  	URL = "http://www.google.com"
+	r = requests.get(url = URL, params = PARAMS) 
+	vusername(r)        #create a request object-username,pwd,email
+	r = sqlite3.execute("select * from users")
+	if(r[-1]==username):
+		print("success")
+	else:
+		print("fail")
+test_vusername("username","password","email")
+
+def test_addMovie(username,movie_name):   
+	PARAMS = {'username':username,'movie_name':movie_name} 
+  	URL = "http://www.google.com"
+  	r = requests.get(url = URL, params = PARAMS) 
+  	k = requests.get(url = URL, params = PARAMS) 
+
+	addMovie(r) 
+	r = sqlite3.execute("select username from user_history")
+
+	addMovie(k)
+	k = sqlite3.execute("select movie_name from user_history")
+	if(r[-1]==username and k[-1]==movie_name):  #-1 indicates last entry/row
+		print("success")
+	else:
+		print("fail")
+test_addMovie("username","Avatar")
+
+def test_getMovies(movie_details):
+	movie_deta=dict()	
+	df = pd.read_csv(csv_path)
+	df = df[0:12]
+	title = df["title"]   # takes the title column of the dataframe
+	movies = []
+	for i in title:
+		movies.append(i)
+	movie_deta["movies"] = movies
+	if(JsonResponse(movie_deta)==getMovies()):
+		print("success")
+	else:
+    		print("fail")
+test_getMovies(movie_details)
+
+def test_pred_fetch(movie_details):
+	movie_deta=dict()	
+	df = pd.read_csv(csv_path)
+	global i
+	df = df[i:i+4]
+	i=i+4
+	title = df["title"]
+	movies = []
+	for j in title:
+		movies.append(j)
+	movie_deta["movies"] = movies
+	#print(movies)
+	if(JsonResponse(movie_deta)==pred_fetch()):
+		print("success")
+	else:
+    		print("fail")
+test_pred_fetch(movie_details)
+
+def test_user_history(user_history):
+  	conn = sqlite3.connect('movie.db')
+	cursor = conn.cursor()
+	#cursor.execute("delete from user_history")
+	#conn.commit()
+	cursor.execute("select * from user_history")
+	rows = cursor.fetchall()
+	user_hist=dict()		
+	list_users = []
+	list_movies = []
+	for row in rows:
+		list_users.append(row[0])
+		list_movies.append(row[1])
+	user_hist["users"] = list_users
+	user_hist["movies"] = list_movies
+	if(JsonResponse(user_history)==user_history()):
+		print("success")
+	else:
+    		print("fail")
+test_user_history(user_history)
+
+def test_getRSSFeed():
+	data1 = requests.get("https://www.cinemablend.com/rss/topic/reviews/movies")
+	#fp = open(r"C:\Users\VINU PC\Desktop\feeds.xml", "r")
+	#data = fp.read()
+	#fp.close()
+	if(HttpResponse(data1.text, content_type='text/xml')==getRSSFeed()):
+		print("success")
+	else:
+    		print("fail")
+test_getRSSFeed()
+
+
+def getNewsFeed():   #(new one)
+	data2 = requests.get("https://www.filmibeat.com/rss/filmibeat-hollywood-fb.xml")
+	if(HttpResponse(data2.text, content_type='text/xml')==getNewsFeed()):
+    		print("success")
+	else:
+    		print("fail")
+test_getNewsFeed()
+    #return HttpResponse(open('myxmlfile.xml').read(), content_type='text/xml')
